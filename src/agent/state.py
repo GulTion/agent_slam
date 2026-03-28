@@ -10,6 +10,7 @@ class GraphState(TypedDict):
     topic: str         # The exact debate topic provided by the server
     stance: str        # "PRO" or "CON" — assigned by the server randomly
     our_team: str      # Our team name as known to the server (e.g. "team1")
+    time_remaining: int  # Time remaining in the match in seconds
 
     # ── Per-turn inputs ───────────────────────────────────────────────────────
     opponent_message: str          # Latest argument received from the opponent

@@ -43,6 +43,7 @@ class DebateState:
         self.message_history: list[str] = []
         self.finish_time_ms: Optional[int] = None
         self.is_paused: bool = False
+        self.is_processing_turn: bool = False
 
     def time_remaining_seconds(self) -> float:
         if self.finish_time_ms is None:
@@ -230,7 +231,7 @@ class DebateClient:
         if self.state.our_team:
             return
 
-        configured_name = self.settings.our_team_name.strip()
+        configured_name = self.settings.our_team_name.strip().lower()
         if configured_name:
             # Use the explicitly configured name
             self.state.our_team = configured_name
@@ -241,8 +242,8 @@ class DebateClient:
             )
             return  # stay silent until configured
 
-        pros = data.get("pros", "")
-        cons = data.get("cons", "")
+        pros = data.get("pros", "").lower()
+        cons = data.get("cons", "").lower()
         self.state.stance = "PRO" if self.state.our_team == pros else "CON"
         self.state.opponent_team = cons if self.state.stance == "PRO" else pros
         logger.info(
@@ -267,7 +268,7 @@ class DebateClient:
 
     async def _maybe_respond(self, ws) -> None:
         """Trigger the LangGraph agent and send a response if it's our turn."""
-        if not self.state.is_our_turn():
+        if not self.state.is_our_turn() or getattr(self.state, "is_processing_turn", False):
             return
 
         remaining = self.state.time_remaining_seconds()
@@ -275,43 +276,48 @@ class DebateClient:
             logger.warning("Too little time remaining (%.1fs); skipping turn.", remaining)
             return
 
-        logger.info("It's our turn. Invoking LangGraph pipeline...")
-
-        # Grab opponent's last message from history
-        opponent_message = ""
-        for entry in reversed(self.state.message_history):
-            if not entry.startswith(f"[{self.state.our_team}]"):
-                opponent_message = entry.split("]: ", 1)[-1] if "]: " in entry else entry
-                break
-
+        self.state.is_processing_turn = True
         try:
-            # Run graph in a thread so we don't block the async event loop
-            argument = await asyncio.wait_for(
-                asyncio.to_thread(
-                    run_debate_turn,
-                    self.state.topic,
-                    self.state.stance,
-                    self.state.our_team,
-                    opponent_message,
-                    list(self.state.message_history),
-                ),
-                timeout=RESPONSE_DEADLINE_SECONDS,
+            logger.info("It's our turn. Invoking LangGraph pipeline...")
+
+            # Grab opponent's last message from history
+            opponent_message = ""
+            for entry in reversed(self.state.message_history):
+                if not entry.startswith(f"[{self.state.our_team}]"):
+                    opponent_message = entry.split("]: ", 1)[-1] if "]: " in entry else entry
+                    break
+
+            try:
+                # Run graph in a thread so we don't block the async event loop
+                argument = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        run_debate_turn,
+                        self.state.topic,
+                        self.state.stance,
+                        self.state.our_team,
+                        opponent_message,
+                        list(self.state.message_history),
+                        int(remaining),
+                    ),
+                    timeout=RESPONSE_DEADLINE_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.error("LangGraph timed out after %ds!", RESPONSE_DEADLINE_SECONDS)
+                argument = (
+                    "The weight of evidence is clear: our position stands on verified data "
+                    "and logical consistency, which the opponent has failed to rebut."
+                )
+
+            # Append our own response to history
+            self.state.message_history.append(f"[{self.state.our_team}]: {argument}")
+
+            payload = json.dumps(
+                {"type": "debate-message", "data": {"message": argument}},
+                ensure_ascii=False,
             )
-        except asyncio.TimeoutError:
-            logger.error("LangGraph timed out after %ds!", RESPONSE_DEADLINE_SECONDS)
-            argument = (
-                "The weight of evidence is clear: our position stands on verified data "
-                "and logical consistency, which the opponent has failed to rebut."
-            )
 
-        # Append our own response to history
-        self.state.message_history.append(f"[{self.state.our_team}]: {argument}")
-
-        payload = json.dumps(
-            {"type": "debate-message", "data": {"message": argument}},
-            ensure_ascii=False,
-        )
-
-        logger.info("→ Sending argument (%d chars)...", len(argument))
-        await ws.send(payload)
-        logger.debug("Sent: %s", argument[:200])
+            logger.info("→ Sending argument (%d chars)...", len(argument))
+            await ws.send(payload)
+            logger.debug("Sent: %s", argument[:200])
+        finally:
+            self.state.is_processing_turn = False

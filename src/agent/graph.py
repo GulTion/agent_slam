@@ -88,7 +88,7 @@ def researcher_node(state: GraphState) -> dict:
     """
     logger.info("[Researcher] Generating search queries...")
     settings = get_settings()
-    llm = _build_llm(settings.model_researcher, temperature=0.3)
+    llm = _build_llm(settings.model_researcher, temperature=settings.temperature_researcher)
 
     # Build the human prompt with all context
     history_block = "\n".join(
@@ -178,7 +178,7 @@ def debater_node(state: GraphState) -> dict:
     """Craft the final debate argument using facts from the research context."""
     logger.info("[Debater] Composing final argument...")
     settings = get_settings()
-    llm = _build_llm(settings.model_debater, temperature=0.75)
+    llm = _build_llm(settings.model_debater, temperature=settings.temperature_debater)
 
     history_block = "\n".join(
         f"- {m}" for m in (state.get("message_history") or [])
@@ -186,12 +186,13 @@ def debater_node(state: GraphState) -> dict:
 
     human_content = (
         f"**Debate Topic:** {state['topic']}\n"
+        f"**Time Remaining in Match:** {state.get('time_remaining', 0)} seconds\n"
         f"**Our Stance:** {state['stance']}\n\n"
         f"**Opponent's Latest Argument:**\n{state.get('opponent_message', '(opening turn)')}\n\n"
         f"**Debate History (oldest first):**\n{history_block}\n\n"
         f"**Research Context (use ONLY these URLs for citations):**\n{state.get('research_context', 'None available.')}\n\n"
         "Compose the final argument. Remember: under 3 000 characters, exactly two inline "
-        "citations using `(source: URL)` format, no filler intro, no follow-up questions."
+        "citations using `(Source: URL)` format, no filler intro."
     )
 
     messages = [
@@ -209,7 +210,12 @@ def debater_node(state: GraphState) -> dict:
             len(argument),
             MAX_RESPONSE_CHARS,
         )
-        argument = argument[:MAX_RESPONSE_CHARS]
+        truncated = argument[:MAX_RESPONSE_CHARS]
+        last_period_idx = truncated.rfind('.')
+        if last_period_idx != -1:
+            argument = truncated[:last_period_idx + 1]
+        else:
+            argument = truncated
 
     logger.info("[Debater] Final argument length: %d chars.", len(argument))
     return {"final_argument": argument}
@@ -252,6 +258,7 @@ def run_debate_turn(
     our_team: str,
     opponent_message: str,
     message_history: list[str],
+    time_remaining: int,
 ) -> str:
     """
     Public interface called by the WebSocket client for every turn.
@@ -262,6 +269,7 @@ def run_debate_turn(
         "topic": topic,
         "stance": stance,
         "our_team": our_team,
+        "time_remaining": time_remaining,
         "opponent_message": opponent_message,
         "message_history": message_history,
         "research_queries": [],

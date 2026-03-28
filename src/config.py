@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     our_team_name: str = ""  # e.g. "team1" or "team2" — set before match day
     model_researcher: str = "gemini-3.0-flash"
     model_debater: str = "gemini-3.1-pro"
+    temperature_researcher: float = 0.3
+    temperature_debater: float = 0.75
 
     # Tavily — comma-separated pool, one chosen at random per search
     tavily_api_keys: str  # raw string; parsed in property below
