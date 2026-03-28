@@ -182,24 +182,21 @@ class TestWebSocketClientIntegration:
             port = list(server.sockets)[0].getsockname()[1]
             mock_wss_url = f"ws://127.0.0.1:{port}"
 
-            with patch.dict("os.environ", {
-                "WSS_URL": mock_wss_url,
-                "BASE_URL": "http://127.0.0.1:9999/v1",
-                "MODEL_RESEARCHER": "gemini-3.0-flash",
-                "MODEL_DEBATER": "gemini-3.1-pro",
-                "TAVILY_API_KEYS": "tvly-dummy",
-                "LANGCHAIN_TRACING_V2": "false",
-                "LANGCHAIN_API_KEY": "dummy",
-            }):
-                from src.config import get_settings
-                get_settings.cache_clear()
-
-                from src.wss_client import DebateClient
-                client = DebateClient()
-                # Override state URL setting directly
-                client.settings.wss_url = mock_wss_url
-
-                await asyncio.wait_for(client.run(), timeout=15)
+            from src.config import Settings
+            from src.wss_client import DebateClient
+            client = DebateClient()
+            # Inject settings directly to avoid lru_cache stale state
+            client.settings = Settings(
+                wss_url=mock_wss_url,
+                base_url="http://127.0.0.1:9999/v1",
+                our_team_name="team1",
+                model_researcher="gemini-3.0-flash",
+                model_debater="gemini-3.1-pro",
+                tavily_api_keys="tvly-dummy",
+                langchain_tracing_v2="false",
+                langchain_api_key="dummy",
+            )
+            await asyncio.wait_for(client.run(), timeout=15)
 
         assert len(sent_messages) == 1, "Client should send exactly one message"
         msg = sent_messages[0]
@@ -285,21 +282,20 @@ class TestWebSocketClientIntegration:
             port = list(server.sockets)[0].getsockname()[1]
             mock_wss_url = f"ws://127.0.0.1:{port}"
 
-            with patch.dict("os.environ", {
-                "WSS_URL": mock_wss_url,
-                "BASE_URL": "http://127.0.0.1:9999/v1",
-                "MODEL_RESEARCHER": "gemini-3.0-flash",
-                "MODEL_DEBATER": "gemini-3.1-pro",
-                "TAVILY_API_KEYS": "tvly-dummy",
-                "LANGCHAIN_TRACING_V2": "false",
-                "LANGCHAIN_API_KEY": "dummy",
-            }):
-                from src.config import get_settings
-                get_settings.cache_clear()
-                from src.wss_client import DebateClient
-                client = DebateClient()
-                client.settings.wss_url = mock_wss_url
-                await asyncio.wait_for(client.run(), timeout=15)
+            from src.config import Settings
+            from src.wss_client import DebateClient
+            client = DebateClient()
+            client.settings = Settings(
+                wss_url=mock_wss_url,
+                base_url="http://127.0.0.1:9999/v1",
+                our_team_name="team1",
+                model_researcher="gemini-3.0-flash",
+                model_debater="gemini-3.1-pro",
+                tavily_api_keys="tvly-dummy",
+                langchain_tracing_v2="false",
+                langchain_api_key="dummy",
+            )
+            await asyncio.wait_for(client.run(), timeout=15)
 
         # The run_debate_turn should have been called with old history restored
         call_args = mock_run_turn.call_args
