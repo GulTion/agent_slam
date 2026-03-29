@@ -320,7 +320,7 @@ class DebateClient:
                         self.state.our_team,
                         opponent_message,
                         list(self.state.message_history),
-                        int(remaining),
+                        remaining,
                     ),
                     timeout=RESPONSE_DEADLINE_SECONDS,
                 )

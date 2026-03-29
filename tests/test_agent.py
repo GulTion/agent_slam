@@ -161,8 +161,8 @@ class TestDebaterNode:
         from src.agent.graph import debater_node
 
         argument = (
-            "Unregulated AI poses systemic risks — bias rates in hiring AI reached 35% (Source: https://mit.edu/ai-bias). "
-            "A peer-reviewed study confirms accidents increase 40% without oversight (Source: https://stanford.edu/ai-safety). "
+            "Unregulated AI poses systemic risks — bias rates in hiring AI reached 35% (source: https://mit.edu/ai-bias). "
+            "A peer-reviewed study confirms accidents increase 40% without oversight (source: https://stanford.edu/ai-safety). "
             "The opponent's claim about market self-regulation is contradicted by documented evidence of repeated failures."
         )
         mock_llm = MagicMock()
@@ -172,7 +172,7 @@ class TestDebaterNode:
         base_state["research_context"] = "URL: https://mit.edu/ai-bias\nURL: https://stanford.edu/ai-safety\n"
         result = debater_node(base_state)
 
-        citation_count = len(re.findall(r'\(Source:\s*https?://\S+\)', result["final_argument"]))
+        citation_count = len(re.findall(r'\(source:\s*https?://\S+\)', result["final_argument"]))
         assert citation_count == 2, f"Expected 2 citations, found {citation_count}"
 
     @patch("src.agent.graph._build_llm")
@@ -227,9 +227,9 @@ class TestFullPipeline:
 
         debater_resp = MagicMock()
         debater_resp.content = (
-            "Mandatory AI regulation is not optional — the WHO explicitly calls for audits to prevent harm (Source: https://who.int/ai-safety). "
+            "Mandatory AI regulation is not optional — the WHO explicitly calls for audits to prevent harm (source: https://who.int/ai-safety). "
             "The EU AI Act demonstrates that regulation and innovation coexist, with adoption rates rising 15% post-enactment "
-            "(Source: https://ec.europa.eu/ai-act). The opponent's assertion of market self-correction ignores documented failures."
+            "(source: https://ec.europa.eu/ai-act). The opponent's assertion of market self-correction ignores documented failures."
         )
 
         # Alternate mock LLM instances for the two invocations
@@ -249,10 +249,10 @@ class TestFullPipeline:
             our_team="team1",
             opponent_message="Markets regulate AI better than governments.",
             message_history=["[team2]: Markets regulate AI better than governments."],
-            time_remaining=500,
+            time_remaining_seconds=500,
         )
 
         assert isinstance(result, str)
         assert len(result) > 0
         assert len(result) <= 2900
-        assert len(re.findall(r'\(Source:\s*https?://\S+\)', result)) == 2
+        assert len(re.findall(r'\(source:\s*https?://\S+\)', result)) == 2

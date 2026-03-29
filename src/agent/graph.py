@@ -7,6 +7,7 @@ Exactly two LLM calls per turn:
 
 import logging
 import random
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
 from langchain_core.tools import tool
@@ -184,15 +185,31 @@ def debater_node(state: GraphState) -> dict:
         f"- {m}" for m in (state.get("message_history") or [])
     ) or "(no prior exchanges)"
 
+    time_remaining = state.get("time_remaining_seconds", 9999.0)
+
+    # Dynamic strategy based on time
+    if time_remaining < 120:
+        time_directive = (
+            "🚨 CRITICAL: LESS THAN 2 MINUTES REMAIN. THIS IS THE FINAL TURN. 🚨\n"
+            "DO NOT rebut the opponent's latest message.\n"
+            "INSTEAD, write a powerful, persuasive closing statement that summarizes "
+            "your strongest points from the whole debate to win the Oracle's vote.\n"
+            "You MUST still include EXACTLY two citations in `(source: URL)` format."
+        )
+    else:
+        time_directive = (
+            "Standard turn. Rebut the opponent briefly, then advance a new argument."
+        )
+
     human_content = (
         f"**Debate Topic:** {state['topic']}\n"
-        f"**Time Remaining in Match:** {state.get('time_remaining', 0)} seconds\n"
         f"**Our Stance:** {state['stance']}\n\n"
         f"**Opponent's Latest Argument:**\n{state.get('opponent_message', '(opening turn)')}\n\n"
         f"**Debate History (oldest first):**\n{history_block}\n\n"
         f"**Research Context (use ONLY these URLs for citations):**\n{state.get('research_context', 'None available.')}\n\n"
+        f"{time_directive}\n\n"
         "Compose the final argument. Remember: under 3 000 characters, exactly two inline "
-        "citations using `(Source: URL)` format, no filler intro."
+        "raw text citations using `(source: URL)` format (NO MARKDOWN LINKS), no filler intro, no follow-up questions."
     )
 
     messages = [
@@ -202,6 +219,10 @@ def debater_node(state: GraphState) -> dict:
 
     response: AIMessage = llm.invoke(messages)
     argument = response.content.strip()
+
+    # Failsafe: strip any markdown links from citations if the LLM hallucinated them
+    # Given `(Source: [text](link))` -> we want to extract the link.
+    argument = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', r'\2', argument)
 
     # Hard truncate as safety net before transmit
     if len(argument) > MAX_RESPONSE_CHARS:
@@ -258,7 +279,7 @@ def run_debate_turn(
     our_team: str,
     opponent_message: str,
     message_history: list[str],
-    time_remaining: int,
+    time_remaining_seconds: float = 9999.0,
 ) -> str:
     """
     Public interface called by the WebSocket client for every turn.
@@ -269,9 +290,9 @@ def run_debate_turn(
         "topic": topic,
         "stance": stance,
         "our_team": our_team,
-        "time_remaining": time_remaining,
         "opponent_message": opponent_message,
         "message_history": message_history,
+        "time_remaining_seconds": time_remaining_seconds,
         "research_queries": [],
         "search_results": [],
         "research_context": "",
