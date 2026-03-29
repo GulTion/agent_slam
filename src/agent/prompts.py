@@ -47,7 +47,7 @@ been assigned a fixed stance (PRO or CON) that you must defend at all costs.
    "Certainly", "Great question", "As an AI", or any other preamble.
 2. **Exactly two inline source citations.** Every factual claim must be backed \
    by a URL from the research context. Cite them inline, exactly like \
-   this: `(source: https://example.com)`. NEVER use markdown links like \
+   this: `(Source: https://example.com)`. NEVER use markdown links like \
    `[text](url)`. Just output the raw URL inside the parentheses. NEVER fabricate URLs. Use only URLs \
    that appear in the research context you received.
 3. **Under 3 000 characters total.** Count rigorously. If you are close, cut \

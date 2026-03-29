@@ -8,21 +8,24 @@ Run: uv run pytest tests/test_wss_client.py -v
 import asyncio
 import json
 import re
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 import pytest_asyncio
 import websockets
-from unittest.mock import AsyncMock, MagicMock, patch
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _make_msg(**kwargs) -> str:
     return json.dumps({"from": "system", **kwargs})
 
 
-WELCOME_MSG = _make_msg(type="welcome", data={"message": "Welcome Tester to AgentSlam!"})
+WELCOME_MSG = _make_msg(
+    type="welcome", data={"message": "Welcome Tester to AgentSlam!"}
+)
 
 MATCH_STATE_OUR_TURN = _make_msg(
     type="match-state",
@@ -60,17 +63,20 @@ OPPONENT_DEBATE_MSG = _make_msg(
     data={"message": "Fossil fuels remain essential due to grid reliability needs."},
 )
 
-MATCH_FINISH_MSG = _make_msg(type="match-finish", data={"message": "The match has ended!"})
+MATCH_FINISH_MSG = _make_msg(
+    type="match-finish", data={"message": "The match has ended!"}
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Unit tests — DebateState
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestDebateState:
 
+class TestDebateState:
     def test_is_our_turn_true(self):
         from src.wss_client import DebateState
+
         s = DebateState()
         s.our_team = "team1"
         s.current_turn = "team1"
@@ -80,6 +86,7 @@ class TestDebateState:
 
     def test_is_our_turn_false_opponent(self):
         from src.wss_client import DebateState
+
         s = DebateState()
         s.our_team = "team1"
         s.current_turn = "team2"
@@ -89,6 +96,7 @@ class TestDebateState:
 
     def test_is_our_turn_false_paused(self):
         from src.wss_client import DebateState
+
         s = DebateState()
         s.our_team = "team1"
         s.current_turn = "team1"
@@ -98,6 +106,7 @@ class TestDebateState:
 
     def test_is_our_turn_false_not_started(self):
         from src.wss_client import DebateState
+
         s = DebateState()
         s.our_team = "team1"
         s.current_turn = "team1"
@@ -110,11 +119,11 @@ class TestDebateState:
 # Unit tests — payload validation
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestPayloadValidation:
 
+class TestPayloadValidation:
     def test_outgoing_payload_valid_json(self):
         """Ensure the payload we construct is valid JSON with correct structure."""
-        argument = "Renewable energy is rapidly scaling (source: https://iea.org/2024). Cost of solar dropped 90% in a decade (source: https://irena.org/solar)."
+        argument = "Renewable energy is rapidly scaling (Source: https://iea.org/2024). Cost of solar dropped 90% in a decade (Source: https://irena.org/solar)."
         payload = json.dumps(
             {"type": "debate-message", "data": {"message": argument}},
             ensure_ascii=False,
@@ -132,8 +141,8 @@ class TestPayloadValidation:
 
     def test_citation_format_regex(self):
         """Verify that the regex used in tests correctly identifies citations."""
-        good = "Emissions fell (source: https://un.org/emissions). Costs dropped (source: https://irena.org/costs)."
-        matches = re.findall(r'\(source:\s*https?://\S+\)', good)
+        good = "Emissions fell (Source: https://un.org/emissions). Costs dropped (Source: https://irena.org/costs)."
+        matches = re.findall(r"\(Source:\s*https?://\S+\)", good)
         assert len(matches) == 2
 
     def test_no_filler_openings(self):
@@ -148,9 +157,9 @@ class TestPayloadValidation:
 # Integration — mock WebSocket server
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 class TestWebSocketClientIntegration:
-
     @patch("src.wss_client.MAX_RECONNECT_DURATION_SECONDS", 0)
     @patch("src.wss_client.run_debate_turn")
     async def test_client_sends_debate_message_on_our_turn(self, mock_run_turn):
@@ -159,8 +168,8 @@ class TestWebSocketClientIntegration:
         Verify the client responds with a correctly formatted debate-message.
         """
         mock_run_turn.return_value = (
-            "Renewable energy investment surged 300% in 5 years (source: https://iea.org/2024). "
-            "Storage technology matured, resolving grid reliability concerns (source: https://irena.org/storage). "
+            "Renewable energy investment surged 300% in 5 years (Source: https://iea.org/2024). "
+            "Storage technology matured, resolving grid reliability concerns (Source: https://irena.org/storage). "
             "The transition is technologically and economically viable."
         )
 
@@ -185,6 +194,7 @@ class TestWebSocketClientIntegration:
 
             from src.config import Settings
             from src.wss_client import DebateClient
+
             client = DebateClient()
             # Inject settings directly to avoid lru_cache stale state
             client.settings = Settings(
@@ -229,19 +239,24 @@ class TestWebSocketClientIntegration:
             port = list(server.sockets)[0].getsockname()[1]
             mock_wss_url = f"ws://127.0.0.1:{port}"
 
-            with patch.dict("os.environ", {
-                "WSS_URL": mock_wss_url,
-                "BASE_URL": "http://127.0.0.1:9999/v1",
-                "OUR_TEAM_NAME": "team1",
-                "MODEL_RESEARCHER": "gemini-3.0-flash",
-                "MODEL_DEBATER": "gemini-3.1-pro",
-                "TAVILY_API_KEYS": "tvly-dummy",
-                "LANGCHAIN_TRACING_V2": "false",
-                "LANGCHAIN_API_KEY": "dummy",
-            }):
+            with patch.dict(
+                "os.environ",
+                {
+                    "WSS_URL": mock_wss_url,
+                    "BASE_URL": "http://127.0.0.1:9999/v1",
+                    "OUR_TEAM_NAME": "team1",
+                    "MODEL_RESEARCHER": "gemini-3.0-flash",
+                    "MODEL_DEBATER": "gemini-3.1-pro",
+                    "TAVILY_API_KEYS": "tvly-dummy",
+                    "LANGCHAIN_TRACING_V2": "false",
+                    "LANGCHAIN_API_KEY": "dummy",
+                },
+            ):
                 from src.config import get_settings
+
                 get_settings.cache_clear()
                 from src.wss_client import DebateClient
+
                 client = DebateClient()
                 client.settings.wss_url = mock_wss_url
                 await asyncio.wait_for(client.run(), timeout=10)
@@ -253,24 +268,36 @@ class TestWebSocketClientIntegration:
     @patch("src.wss_client.run_debate_turn")
     async def test_client_restores_history_on_reconnect(self, mock_run_turn):
         """Client should restore message history from previous-message event."""
-        mock_run_turn.return_value = "Our argument (source: https://a.com) strong (source: https://b.com)."
+        mock_run_turn.return_value = (
+            "Our argument (Source: https://a.com) strong (Source: https://b.com)."
+        )
 
         captured_state: dict = {}
 
         async def mock_server(websocket):
             await websocket.send(WELCOME_MSG)
             # Send previous-message (simulating mid-match reconnect)
-            prev = json.dumps({
-                "type": "previous-message",
-                "from": "system",
-                "data": {
-                    "message": "Match is already live! Here are the previous conversations.",
-                    "conversations": [
-                        {"team": "team2", "message": "Old opponent argument.", "timestamp": "2026-03-28T10:00:00Z"},
-                        {"team": "team1", "message": "Our old argument.", "timestamp": "2026-03-28T10:01:00Z"},
-                    ],
-                },
-            })
+            prev = json.dumps(
+                {
+                    "type": "previous-message",
+                    "from": "system",
+                    "data": {
+                        "message": "Match is already live! Here are the previous conversations.",
+                        "conversations": [
+                            {
+                                "team": "team2",
+                                "message": "Old opponent argument.",
+                                "timestamp": "2026-03-28T10:00:00Z",
+                            },
+                            {
+                                "team": "team1",
+                                "message": "Our old argument.",
+                                "timestamp": "2026-03-28T10:01:00Z",
+                            },
+                        ],
+                    },
+                }
+            )
             await websocket.send(prev)
             await asyncio.sleep(0.05)
             await websocket.send(MATCH_STATE_OUR_TURN)
@@ -287,6 +314,7 @@ class TestWebSocketClientIntegration:
 
             from src.config import Settings
             from src.wss_client import DebateClient
+
             client = DebateClient()
             client.settings = Settings(
                 wss_url=mock_wss_url,

@@ -9,7 +9,7 @@ import logging
 import random
 import re
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
@@ -26,6 +26,7 @@ MAX_RESPONSE_CHARS = 2_900  # keep a 100-char safety buffer below the 3 000 limi
 # ──────────────────────────────────────────────────────────────────────────────
 # Tavily wrapper (selects a random key from the pool on every call)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _get_tavily_client():
     """Return a TavilyClient initialised with a randomly chosen API key."""
@@ -66,11 +67,12 @@ def _run_tavily_search(queries: list[str]) -> list[dict]:
 # Helper: build LLM instances
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _build_llm(model_name: str, *, temperature: float = 0.7) -> ChatOpenAI:
     settings = get_settings()
     return ChatOpenAI(
         base_url=settings.base_url,
-        api_key="dummy",          # proxy handles auth; key is irrelevant
+        api_key="dummy",  # proxy handles auth; key is irrelevant
         model=model_name,
         temperature=temperature,
         max_tokens=1024,
@@ -81,6 +83,7 @@ def _build_llm(model_name: str, *, temperature: float = 0.7) -> ChatOpenAI:
 # Node 1 — Researcher  (LLM call #1)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def researcher_node(state: GraphState) -> dict:
     """
     Ask the Flash model what to search for.
@@ -89,12 +92,15 @@ def researcher_node(state: GraphState) -> dict:
     """
     logger.info("[Researcher] Generating search queries...")
     settings = get_settings()
-    llm = _build_llm(settings.model_researcher, temperature=settings.temperature_researcher)
+    llm = _build_llm(
+        settings.model_researcher, temperature=settings.temperature_researcher
+    )
 
     # Build the human prompt with all context
-    history_block = "\n".join(
-        f"- {m}" for m in (state.get("message_history") or [])
-    ) or "(no prior exchanges)"
+    history_block = (
+        "\n".join(f"- {m}" for m in (state.get("message_history") or []))
+        or "(no prior exchanges)"
+    )
 
     human_content = (
         f"**Debate Topic:** {state['topic']}\n"
@@ -156,6 +162,7 @@ def researcher_node(state: GraphState) -> dict:
 # Node 2 — Tool Executor  (Tavily search — NOT an LLM call)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def search_node(state: GraphState) -> dict:
     """Execute the queries and format a clean context string for the Debater."""
     queries = state.get("research_queries") or []
@@ -175,26 +182,28 @@ def search_node(state: GraphState) -> dict:
 # Node 3 — Debater  (LLM call #2)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def debater_node(state: GraphState) -> dict:
     """Craft the final debate argument using facts from the research context."""
     logger.info("[Debater] Composing final argument...")
     settings = get_settings()
     llm = _build_llm(settings.model_debater, temperature=settings.temperature_debater)
 
-    history_block = "\n".join(
-        f"- {m}" for m in (state.get("message_history") or [])
-    ) or "(no prior exchanges)"
+    history_block = (
+        "\n".join(f"- {m}" for m in (state.get("message_history") or []))
+        or "(no prior exchanges)"
+    )
 
     time_remaining = state.get("time_remaining_seconds", 9999.0)
 
     # Dynamic strategy based on time
-    if time_remaining < 120:
+    if time_remaining < 70:
         time_directive = (
-            "🚨 CRITICAL: LESS THAN 2 MINUTES REMAIN. THIS IS THE FINAL TURN. 🚨\n"
+            "🚨 CRITICAL: LESS THAN 70 Seconds REMAIN. THIS IS THE FINAL TURN. 🚨\n"
             "DO NOT rebut the opponent's latest message.\n"
             "INSTEAD, write a powerful, persuasive closing statement that summarizes "
             "your strongest points from the whole debate to win the Oracle's vote.\n"
-            "You MUST still include EXACTLY two citations in `(source: URL)` format."
+            "You MUST still include EXACTLY two citations in `(Source: URL)` format."
         )
     else:
         time_directive = (
@@ -209,7 +218,7 @@ def debater_node(state: GraphState) -> dict:
         f"**Research Context (use ONLY these URLs for citations):**\n{state.get('research_context', 'None available.')}\n\n"
         f"{time_directive}\n\n"
         "Compose the final argument. Remember: under 3 000 characters, exactly two inline "
-        "raw text citations using `(source: URL)` format (NO MARKDOWN LINKS), no filler intro, no follow-up questions."
+        "raw text citations using `(Source: URL)` format (NO MARKDOWN LINKS), no filler intro, no follow-up questions."
     )
 
     messages = [
@@ -222,7 +231,7 @@ def debater_node(state: GraphState) -> dict:
 
     # Failsafe: strip any markdown links from citations if the LLM hallucinated them
     # Given `(Source: [text](link))` -> we want to extract the link.
-    argument = re.sub(r'\[([^\]]+)\]\((https?://[^\)]+)\)', r'\2', argument)
+    argument = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r"\2", argument)
 
     # Hard truncate as safety net before transmit
     if len(argument) > MAX_RESPONSE_CHARS:
@@ -232,9 +241,9 @@ def debater_node(state: GraphState) -> dict:
             MAX_RESPONSE_CHARS,
         )
         truncated = argument[:MAX_RESPONSE_CHARS]
-        last_period_idx = truncated.rfind('.')
+        last_period_idx = truncated.rfind(".")
         if last_period_idx != -1:
-            argument = truncated[:last_period_idx + 1]
+            argument = truncated[: last_period_idx + 1]
         else:
             argument = truncated
 
@@ -245,6 +254,7 @@ def debater_node(state: GraphState) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 # Graph assembly
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def build_graph():
     """Build and compile the debate state graph."""
