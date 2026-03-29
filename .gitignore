@@ -6,7 +6,10 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+
 .venv
 .env
 *.pdf
+tests/
+AGENT SLAM 2026 — Official Competition Rulebook.pdf
+USER_MANUAL.pdf
