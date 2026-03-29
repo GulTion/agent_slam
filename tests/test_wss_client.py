@@ -151,6 +151,7 @@ class TestPayloadValidation:
 @pytest.mark.asyncio
 class TestWebSocketClientIntegration:
 
+    @patch("src.wss_client.MAX_RECONNECT_DURATION_SECONDS", 0)
     @patch("src.wss_client.run_debate_turn")
     async def test_client_sends_debate_message_on_our_turn(self, mock_run_turn):
         """
@@ -204,6 +205,7 @@ class TestWebSocketClientIntegration:
         assert "message" in msg["data"]
         assert len(msg["data"]["message"]) <= 3000
 
+    @patch("src.wss_client.MAX_RECONNECT_DURATION_SECONDS", 0)
     @patch("src.wss_client.run_debate_turn")
     async def test_client_does_not_respond_on_opponent_turn(self, mock_run_turn):
         """Client must NOT send any message when it is the opponent's turn."""
@@ -247,6 +249,7 @@ class TestWebSocketClientIntegration:
         assert len(sent_messages) == 0, "Client must NOT respond when it's not our turn"
         mock_run_turn.assert_not_called()
 
+    @patch("src.wss_client.MAX_RECONNECT_DURATION_SECONDS", 0)
     @patch("src.wss_client.run_debate_turn")
     async def test_client_restores_history_on_reconnect(self, mock_run_turn):
         """Client should restore message history from previous-message event."""

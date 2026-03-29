@@ -14,6 +14,7 @@ Connection flow:
 import asyncio
 import json
 import logging
+import random
 import time
 from typing import Optional
 
@@ -25,8 +26,7 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 5
-RETRY_BACKOFF_SECONDS = 3
+MAX_RECONNECT_DURATION_SECONDS = 90
 RESPONSE_DEADLINE_SECONDS = 110  # server SLA = 120s; we keep a buffer
 
 
@@ -68,37 +68,60 @@ class DebateClient:
     # ──────────────────────────────────────────────────────────────────────────
 
     async def run(self) -> None:
-        """Connect and keep reconnecting on transient failures."""
+        """Connect and keep reconnecting on transient failures within a 90s cutoff."""
         attempt = 0
-        while attempt <= MAX_RETRIES:
+        disconnect_time = None
+
+        def on_connect():
+            nonlocal attempt, disconnect_time
+            if attempt > 0:
+                logger.info("Reconnection successful!")
+            attempt = 0
+            disconnect_time = None
+
+        while True:
             try:
-                await self._connect_and_listen()
+                await self._connect_and_listen(on_connect)
                 break  # clean exit (match finished)
             except ConnectionClosedOK:
                 logger.info("WebSocket closed cleanly. Match likely finished.")
                 break
-            except ConnectionClosedError as exc:
+            except (ConnectionClosedError, Exception) as exc:
+                if disconnect_time is None:
+                    disconnect_time = time.time()
+
                 attempt += 1
-                logger.warning(
-                    "Connection lost (attempt %d/%d): %s", attempt, MAX_RETRIES, exc
-                )
-                if attempt <= MAX_RETRIES:
-                    await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt)
-            except Exception as exc:
-                logger.error("Unexpected error: %s", exc, exc_info=True)
-                attempt += 1
-                if attempt <= MAX_RETRIES:
-                    await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                if isinstance(exc, ConnectionClosedError):
+                    logger.warning("Connection lost (attempt %d): %s", attempt, exc)
+                else:
+                    logger.error("Unexpected error (attempt %d): %s", attempt, exc, exc_info=True)
+
+                elapsed = time.time() - disconnect_time
+                if elapsed >= MAX_RECONNECT_DURATION_SECONDS:
+                    logger.error("Failed to reconnect within %d seconds. Giving up to avoid disqualification.", MAX_RECONNECT_DURATION_SECONDS)
+                    break
+
+                # Exponential backoff: 2^attempt, capped at 10s, with jitter
+                backoff = min(10.0, 2 ** attempt) + random.uniform(0, 1)
+
+                # Make sure we don't sleep past the hard cutoff
+                time_left = MAX_RECONNECT_DURATION_SECONDS - (time.time() - disconnect_time)
+                sleep_time = max(0.1, min(backoff, time_left))
+
+                logger.info("Waiting %.1fs before next reconnect attempt...", sleep_time)
+                await asyncio.sleep(sleep_time)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Core listen loop
     # ──────────────────────────────────────────────────────────────────────────
 
-    async def _connect_and_listen(self) -> None:
+    async def _connect_and_listen(self, on_connect=None) -> None:
         url = self.settings.wss_url
         logger.info("Connecting to %s ...", url)
         async with websockets.connect(url, ping_interval=20, ping_timeout=30) as ws:
             logger.info("Connected.")
+            if on_connect:
+                on_connect()
             async for raw_msg in ws:
                 await self._handle_message(ws, raw_msg)
 
